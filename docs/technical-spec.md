@@ -1,6 +1,6 @@
 # Auditable Wallet: Technical Specification
 
-Status: **discussion draft** (2026-10-04). This document defines the proposed implementation; no application code is authorized by this step.
+Status: **scope confirmed; ready for design review** (2026-10-04). Implementation begins only after the candidate explicitly confirms this specification.
 
 ## 1. Goal and source of requirements
 
@@ -10,17 +10,17 @@ The candidate's additional requirements are an append-only ledger, OpenAPI/Swagg
 
 ### Scope
 
-- One wallet per user and one fixed currency for the exercise; all amounts are integer minor units (for example, cents), stored as signed 64-bit integers. The currency code is configured for the whole deployment and included in API responses. This avoids floating-point rounding and avoids foreign exchange rules.
+- One wallet per user in **IRR**. One stored unit represents one Iranian rial; amounts are whole rials stored as signed 64-bit integers. Every wallet and entry response includes `currency: "IRR"`. Fractional rials, currency conversion, and toman conversion are outside the scope.
 - Credits are internal bookkeeping commands. No payment provider, bank settlement, or external success callback is modeled.
 - The service creates a wallet explicitly, then accepts credits and debits. No transfer, hold, reversal, admin balance edit, user registration, or multi-currency operation is included.
 - A demo caller supplies a user identifier; authentication and ownership checks are outside the exercise. This is an explicit deployment limitation, not a claim that the API is safe to expose publicly.
 
-The scope bullets above are **working assumptions awaiting the candidate's confirmation**. If the intended scope differs, update this section and its affected API/data model before implementation.
+The candidate confirmed internal adjustments, caller-supplied user IDs without authentication, one wallet and currency per user without transfers, and IRR on 2026-10-04. Explicit wallet creation and whole-rial amounts are design choices for this scope.
 
 ## 2. Invariants and consistency model
 
 1. For each wallet, `balance = SUM(ledger.delta)` over all committed entries; an empty ledger sums to zero.
-2. `0 <= balance <= 2^63 - 1` after every committed operation. Amounts are positive integers in minor units; zero, fractions, negative values, and values outside the 64-bit range are rejected.
+2. `0 <= balance <= 2^63 - 1` after every committed operation. Amounts are positive integers in whole IRR; zero, fractions, negative values, and values outside the 64-bit range are rejected.
 3. Exactly one committed ledger row represents each successful credit or debit. The row records its signed delta, operation, wallet sequence, request key, and resulting balance. Ledger rows are never updated or deleted through application operations.
 4. Wallet balance and sequence are a derived, mutable projection for fast reads. A change to this projection and the corresponding ledger append commit in one PostgreSQL transaction or neither does. The ledger remains sufficient to reconstruct and verify the projection.
 5. A `(wallet_id, idempotency_key)` names one mutation intent. Repeating the same key and same canonical command returns the original result and makes no second change. Reusing the key with different content is a conflict.
@@ -50,7 +50,8 @@ API pods hold no wallet state. PostgreSQL is the only coordination and durabilit
 | PostgreSQL transaction and row lock per wallet | Serializes debits across pods and makes the ledger/projection update atomic | Concurrent writes to the same wallet queue; this is acceptable for the exercise |
 | `READ COMMITTED` isolation plus `SELECT ... FOR UPDATE` | Sufficient for a single-wallet mutation when every writer follows the protocol | A new code path that bypasses the lock could violate the invariant |
 | Stored balance projection | Constant-time balance reads and pre-debit checks; rebuildable from entries | Redundant state requires reconciliation tests and an operational repair path |
-| Integer minor units in `BIGINT` | Exact arithmetic and simple validation | Fixed scale/currency; overflow must be checked explicitly |
+| Whole IRR in `BIGINT` | Exact arithmetic and simple validation | No fractional amounts; overflow must be checked explicitly |
+| Decimal strings for API amounts and sequences | Preserves the full integer range in common JSON clients without rounding | Clients parse strings when they need arithmetic; the API accepts one representation only |
 | Persistent idempotency key on ledger row | Makes a retry safe even if the first response is lost | Clients must generate and retain stable keys; keys are retained with ledger history |
 | Cursor-based history | Stable, efficient traversal as entries grow | Client must follow cursors; no offset-based random page access |
 | No queue/cache/distributed lock | Keeps the consistency story small and reviewable | Database availability and throughput bound the service |
@@ -88,12 +89,16 @@ Concurrent create requests for the same `user_id` resolve through the unique con
 
 ## 5. API contract
 
-The implementation publishes OpenAPI 3.x at `GET /openapi.json` and interactive Swagger UI at `GET /docs`. Those endpoints describe the schemas, required idempotency header, examples, and error responses below. The API returns JSON, uses UUIDs for identifiers, and sends decimal integer JSON numbers for amounts. Clients must avoid JavaScript number precision loss above `2^53 - 1`; the OpenAPI schema should document this, and a string representation can be chosen before implementation if browser clients are required.
+The implementation publishes OpenAPI 3.x at `GET /openapi.json` and interactive Swagger UI at `GET /docs`. Those endpoints describe the schemas, required idempotency header, examples, and error responses below. The API returns JSON and uses UUIDs for identifiers. All monetary fields (`amount`, `delta`, `balance`, `balance_after`) and 64-bit sequence fields (`wallet_sequence`, `last_sequence`) are **decimal strings** on the wire, while storage and domain arithmetic use integers. This keeps the full `BIGINT` range exact without requiring special JSON number handling in clients. `limit` remains a small JSON/query integer.
+
+For example, a credit request is `{ "amount": "1250" }`, meaning 1,250 IRR. A response can contain `{ "amount": "1250", "delta": "1250", "balance_after": "1250", "wallet_sequence": "1", "currency": "IRR" }`. A debit's `delta` is negative, such as `"-250"`. Zero balances and initial sequences are `"0"`.
+
+An amount must be a JSON string matching `^[1-9][0-9]*$` and represent a value at most `9223372036854775807`. Numeric JSON values, leading zeros, signs, whitespace, decimal points, and exponent notation are rejected. OpenAPI models amounts as strings with this pattern and documents the numeric range. The server checks range before converting to a bounded integer; a well-formed string outside the range returns `422`.
 
 | Method and path | Request | Success |
 | --- | --- | --- |
-| `PUT /v1/wallets/{user_id}` | No body | `200`, wallet with `balance: 0` when created; repeat returns existing wallet without resetting it |
-| `POST /v1/wallets/{user_id}/credits` | `Idempotency-Key: <UUID>` and `{ "amount": 1250 }` | `201`, entry with `kind`, `amount`, `balance_after`, `wallet_sequence`, `created_at` |
+| `PUT /v1/wallets/{user_id}` | No body | `200`, wallet with `balance: "0"` when created; repeat returns existing wallet without resetting it |
+| `POST /v1/wallets/{user_id}/credits` | `Idempotency-Key: <UUID>` and `{ "amount": "1250" }` | `201`, entry with `kind`, `amount`, `balance_after`, `wallet_sequence`, `created_at` |
 | `POST /v1/wallets/{user_id}/debits` | Same shape | `201`, same entry shape |
 | `GET /v1/wallets/{user_id}` | None | `200`, wallet ID, user ID, currency, current balance, last sequence |
 | `GET /v1/wallets/{user_id}/entries?limit=50&cursor=...` | Optional limit and cursor | `200`, newest-first entries and `next_cursor`; following cursors yields full history |
@@ -110,7 +115,7 @@ All errors have `{ "error": { "code": "...", "message": "..." } }`; messages are
 
 | Status | Code | Case |
 | --- | --- | --- |
-| `400` | `invalid_request` | Malformed JSON, unknown fields, missing/invalid UUID key, non-integer amount, zero/negative amount, invalid cursor/limit |
+| `400` | `invalid_request` | Malformed JSON, unknown fields, missing/invalid UUID key, noncanonical amount string or numeric JSON amount, zero/negative amount, invalid cursor/limit |
 | `404` | `wallet_not_found` | Balance, history, credit, or debit for a missing wallet |
 | `409` | `insufficient_funds` | Debit exceeds locked current balance |
 | `409` | `idempotency_conflict` | Same key with different operation or amount |
@@ -168,15 +173,13 @@ Required tests:
 3. Repeat a successful credit and debit with the same key; assert the original response and exactly one change. Reuse a key with another amount or operation; assert conflict.
 4. Run two debits concurrently against one wallet through separate database connections, with combined amount exceeding funds; exactly one succeeds and balance never goes negative.
 5. Force an error after the wallet update but before the ledger insert/commit; assert rollback leaves both wallet and ledger unchanged.
-6. Exercise retry after a simulated lost response, history pagination during concurrent append, amount overflow, malformed inputs, and a missing wallet.
+6. Exercise retry after a simulated lost response, history pagination during concurrent append, amount overflow, malformed inputs, and a missing wallet. Verify decimal-string round trips above `2^53 - 1`, rejection of numeric JSON amounts, and `IRR` in responses.
 7. Rebuild balance and sequence from the ledger in a test to prove the projection invariant. Validate the served OpenAPI document and use it to check representative requests/responses.
 
 Keep the runnable delivery small: one service, one database, migration scripts, documented local startup, Swagger UI, and the above tests. Defer external payment integration, authentication, distributed queues, cache, replicas, transfers, and operational high-availability automation unless the candidate changes scope.
 
-## 9. Open decisions for review
+## 9. Decision record and next step
 
-1. Confirm whether credits are internal adjustments or confirmed external deposits. The latter requires an external event identity and a different trust boundary.
-2. Confirm whether caller-supplied user IDs without authentication are acceptable for the exercise. If authentication is required, define the identity source and ownership rule.
-3. Confirm one wallet and one currency per user, with no transfers. More currencies or transfers change the data model and lock ordering.
-4. Confirm the unit and currency code (for example, USD cents). Until then, `BIGINT` means fixed minor units and the code is deployment configuration.
-5. Confirm whether the API must support browser JavaScript clients that cannot safely represent all signed 64-bit JSON numbers. If so, encode monetary integers as decimal strings in the API while retaining `BIGINT` in PostgreSQL.
+The candidate confirmed the proposed scope and selected IRR on 2026-10-04. The candidate delegated the client representation choice with a preference for simplicity; decimal strings are selected to preserve exact integer values across JSON clients. The implementation uses whole rials without a configurable currency or conversion layer.
+
+The specification is ready for review. The next step is implementation after explicit candidate confirmation; confirming scope alone does not start that step.
