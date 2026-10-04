@@ -1,12 +1,12 @@
 # Auditable Wallet: Technical Specification
 
-Status: **implementation approved and delivered** (2026-10-04). The candidate explicitly authorized implementation after the design review. See [the README](../README.md) for startup, API documentation, and verification commands.
+ See [the README](../README.md) for startup, API documentation, and verification commands.
 
 ## 1. Goal and scope
 
-Build a small wallet service for an interview exercise with roughly three days of implementation time. The supplied assignment requires credit, debit, current balance, and complete change history; no negative balance; a separate record for each change; a balance verifiable from recorded changes; atomic failure handling; and defined retry behavior. It asks for runnable code, documented assumptions, and tests for sequential changes, insufficient funds, retries, and rollback.
+ The supplied assignment requires credit, debit, current balance, and complete change history; no negative balance; a separate record for each change; a balance verifiable from recorded changes; atomic failure handling; and defined retry behavior.
 
-The candidate additionally requires an append-only ledger, OpenAPI/Swagger documentation, concurrency safety across pods, and resilience during network partitions. Simplicity of implementation is the primary design criterion. The assignment prefers Python/Django, and the candidate is familiar with Celery. Domain behavior is specified independently of language; the reference implementation uses Django, PostgreSQL, Celery, and Redis.
+It additionally requires an append-only ledger, OpenAPI/Swagger documentation, concurrency safety across pods, and resilience during network partitions. Simplicity of implementation is the primary design criterion.
 
 ### Confirmed scope and design assumptions
 
