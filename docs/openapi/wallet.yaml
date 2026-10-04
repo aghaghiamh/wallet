@@ -1,0 +1,660 @@
+openapi: 3.0.3
+info:
+  title: Auditable Wallet
+  version: 1.0.0
+  description: Interview demo. Whole IRR amounts are decimal strings. Demo user/account
+    IDs; no authentication.
+paths:
+  /health:
+    get:
+      operationId: health_retrieve
+      tags:
+      - health
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /v1/wallets/{user_id}:
+    get:
+      operationId: wallet_retrieve
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+    put:
+      operationId: wallet_create
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /v1/wallets/{user_id}/debits:
+    post:
+      operationId: v1_wallets_debits_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+          format: uuid
+        description: Retain this UUID when retrying. Scoped to wallet and operation.
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebitRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DebitRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DebitRequestRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ledger'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /v1/wallets/{user_id}/entries:
+    get:
+      operationId: v1_wallets_entries_retrieve
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+        description: Opaque cursor from the previous page
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: 1..100; default 50
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/History'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /v1/wallets/{user_id}/top-ups:
+    post:
+      operationId: v1_wallets_top_ups_create
+      description: Persist an intent. No credit until provider confirmation. Replays
+        return the original receipt.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+          format: uuid
+        description: Retain this UUID when retrying. Scoped to wallet and operation.
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopUpRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TopUpRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TopUpRequestRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopUpReceipt'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /v1/wallets/{user_id}/top-ups/{top_up_id}:
+    get:
+      operationId: v1_wallets_top_ups_retrieve
+      parameters:
+      - in: path
+        name: top_up_id
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopUpStatus'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+components:
+  schemas:
+    DebitRequestRequest:
+      type: object
+      properties:
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+      required:
+      - amount
+    Error:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    History:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ledger'
+        next_cursor:
+          type: string
+          nullable: true
+      required:
+      - entries
+      - next_cursor
+    KindEnum:
+      enum:
+      - credit
+      - debit
+      type: string
+      description: |-
+        * `credit` - credit
+        * `debit` - debit
+    Ledger:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        wallet_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        delta:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]*)$
+        balance_after:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]*)$
+        wallet_sequence:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]*)$
+        created_at:
+          type: string
+          format: date-time
+        currency:
+          type: string
+        top_up_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - amount
+      - balance_after
+      - created_at
+      - currency
+      - delta
+      - id
+      - kind
+      - top_up_id
+      - wallet_id
+      - wallet_sequence
+    NullEnum:
+      enum:
+      - null
+    ProviderStatusEnum:
+      enum:
+      - PENDING
+      - SUCCEEDED
+      - FAILED
+      type: string
+      description: |-
+        * `PENDING` - PENDING
+        * `SUCCEEDED` - SUCCEEDED
+        * `FAILED` - FAILED
+    StatusEnum:
+      enum:
+      - PENDING
+      - SETTLED
+      - FAILED
+      - REVIEW_REQUIRED
+      type: string
+      description: |-
+        * `PENDING` - PENDING
+        * `SETTLED` - SETTLED
+        * `FAILED` - FAILED
+        * `REVIEW_REQUIRED` - REVIEW_REQUIRED
+    TopUpReceipt:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        wallet_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        currency:
+          type: string
+      required:
+      - amount
+      - currency
+      - id
+      - wallet_id
+    TopUpRequestRequest:
+      type: object
+      properties:
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        source_account_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+      required:
+      - amount
+      - source_account_id
+    TopUpStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        wallet_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        provider_status:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ProviderStatusEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        source_account_id:
+          type: string
+        destination_account_id:
+          type: string
+        error_code:
+          type: string
+          nullable: true
+        last_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        ledger_entry_id:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+      required:
+      - amount
+      - created_at
+      - currency
+      - destination_account_id
+      - error_code
+      - id
+      - last_checked_at
+      - ledger_entry_id
+      - provider_status
+      - source_account_id
+      - status
+      - updated_at
+      - wallet_id
+    Wallet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        balance:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]*)$
+        last_sequence:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]*)$
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - balance
+      - created_at
+      - currency
+      - id
+      - last_sequence
+      - user_id

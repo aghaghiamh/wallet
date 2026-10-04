@@ -1,0 +1,102 @@
+x-environment: &environment
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGUSER: wallet
+  PGPASSWORD: wallet
+  PGDATABASE: wallet
+  PROVIDER_DATABASE: provider
+  CELERY_BROKER_URL: redis://redis:6379/0
+  PROVIDER_URL: http://provider-api:8000
+  SECRET_KEY: local-demo-shared-secret
+x-app: &app
+  image: auditable-wallet:local
+  environment: *environment
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: wallet
+    ports: ["127.0.0.1:55432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01-provider.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:56379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *app
+    build: .
+    command: sh -c "python manage.py migrate --noinput && python manage.py migrate --database provider --noinput && python manage.py provider_seed"
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    <<: *app
+    restart: unless-stopped
+    ports: ["127.0.0.1:${WALLET_PORT:-8000}:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+  provider-api:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      <<: *environment
+      SERVICE_ROLE: provider
+    ports: ["127.0.0.1:${PROVIDER_PORT:-8001}:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+  provider-processor:
+    <<: *app
+    restart: unless-stopped
+    command: python manage.py provider_advance --loop
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  worker:
+    <<: *app
+    restart: unless-stopped
+    command: celery -A config worker --loglevel=INFO --concurrency=2
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  beat:
+    <<: *app
+    restart: unless-stopped
+    command: celery -A config beat --loglevel=INFO
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  tests:
+    <<: *app
+    profiles: ["test"]
+    command: pytest -q
+    environment:
+      <<: *environment
+      RUN_INTEGRATION: "1"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+volumes:
+  postgres-data:

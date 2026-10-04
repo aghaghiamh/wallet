@@ -1,0 +1,246 @@
+openapi: 3.0.3
+info:
+  title: Provider simulator
+  version: 1.0.0
+  description: Interview demo. Whole IRR amounts are decimal strings. Demo user/account
+    IDs; no authentication.
+paths:
+  /health:
+    get:
+      operationId: health_retrieve
+      tags:
+      - health
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /v1/transfers/{transfer_id}:
+    get:
+      operationId: v1_transfers_retrieve
+      parameters:
+      - in: path
+        name: transfer_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+    put:
+      operationId: v1_transfers_update
+      description: The caller supplies a permanent transfer ID. Identical repeats
+        never move funds twice.
+      parameters:
+      - in: path
+        name: transfer_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TransferRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TransferRequestRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+components:
+  schemas:
+    CurrencyEnum:
+      enum:
+      - IRR
+      type: string
+      description: '* `IRR` - IRR'
+    Error:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    StatusEnum:
+      enum:
+      - PENDING
+      - SUCCEEDED
+      - FAILED
+      type: string
+      description: |-
+        * `PENDING` - PENDING
+        * `SUCCEEDED` - SUCCEEDED
+        * `FAILED` - FAILED
+    Transfer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        source_account_id:
+          type: string
+        destination_account_id:
+          type: string
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        currency:
+          type: string
+        failure_code:
+          type: string
+          nullable: true
+      required:
+      - amount
+      - currency
+      - destination_account_id
+      - failure_code
+      - id
+      - source_account_id
+      - status
+    TransferRequestRequest:
+      type: object
+      properties:
+        source_account_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        destination_account_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        amount:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: Whole IRR, 1..9223372036854775807, encoded as a decimal string.
+          example: '1000000'
+        currency:
+          $ref: '#/components/schemas/CurrencyEnum'
+      required:
+      - amount
+      - currency
+      - destination_account_id
+      - source_account_id

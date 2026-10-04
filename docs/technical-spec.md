@@ -1,6 +1,6 @@
 # Auditable Wallet: Technical Specification
 
-Status: **scope confirmed; ready for design review** (2026-10-04). Implementation begins after explicit candidate confirmation.
+Status: **implementation approved and delivered** (2026-10-04). The candidate explicitly authorized implementation after the design review. See [the README](../README.md) for startup, API documentation, and verification commands.
 
 ## 1. Goal and scope
 
@@ -219,7 +219,7 @@ Business failures such as insufficient source funds appear as a durable `FAILED`
 
 The mock uses preconfigured demo accounts and scripted success/failure/delay scenarios. Failure injection belongs to test fixtures or a demo management command, not the public wallet API. The adapter uses a configured provider URL and fixed request timeouts; request bodies never select arbitrary URLs.
 
-The simulator stores transfers and seeded account balances in its own database. Its transfer executor locks the transfer, then source/destination accounts in account-ID order, rechecks the pending state and funds, and commits the source debit, destination credit, and successful status together. Unknown accounts, identical source/destination, insufficient funds, or destination overflow produce a failed transfer without account changes. A repeated execution sees the terminal result and moves no additional funds. A small `provider-advance --once` command advances due transfers for demos/tests; it can also run in a loop. GET remains a status read. Only the two provider HTTP endpoints are needed by the wallet adapter.
+The simulator stores transfers and seeded account balances in its own database. Its transfer executor locks the transfer, then source/destination accounts in account-ID order, rechecks the pending state and funds, and commits the source debit, destination credit, and successful status together. Unknown accounts, identical source/destination, insufficient funds, or destination overflow produce a failed transfer without account changes. A repeated execution sees the terminal result and moves no additional funds. A small `provider_advance --once` command advances due transfers for demos/tests; it can also run in a loop. GET remains a status read. Only the two provider HTTP endpoints are needed by the wallet adapter.
 
 ### Wallet errors
 
@@ -324,7 +324,7 @@ Deadlocks (`40P01`) and serialization conflicts (`40001`) trigger a bounded retr
 
 Normal polling reconciles unfinished intents: external success becomes one local credit, definitive external failure becomes local failure, and uncertainty remains pending.
 
-A `reconcile-known-transfers --once` command also checks recorded transfers, including settled and failed ones. It retrieves provider state outside database transactions and reports counts of matched, pending, unverified, review-required, and mismatched records. For eligible pending intents it invokes the same processing and settlement service used by the Celery task.
+A `reconcile_known_transfers --once` command also checks recorded transfers, including settled and failed ones. It retrieves provider state outside database transactions and reports counts of matched, pending, unverified, review-required, and mismatched records. For eligible pending intents it invokes the same processing and settlement service used by the Celery task. A pending intent with an existing credit is reported as inconsistent without attempting another settlement.
 
 The command verifies:
 
@@ -333,7 +333,7 @@ The command verifies:
 - A failed top-up has provider failure and no credit.
 - Credits have valid funding references and each wallet projection matches its ordered ledger.
 
-Local projection/ledger comparisons use one consistent read snapshot (a single query or a short read-only repeatable-read transaction). Provider calls occur outside that snapshot. If local processing advanced after a provider observation, recheck before reporting a mismatch; normal concurrent settlement must not produce a false integrity report.
+Local projection/ledger comparisons use one consistent read snapshot (a single query or a short read-only repeatable-read transaction). Provider calls occur outside that snapshot. The audit reads local intent and credit state before querying the provider: immutable terminal provider outcomes ensure a concurrent settlement cannot pair newer local settlement with an older pending observation. Confirmation after a pending local snapshot is ordinary progress; a later audit can verify the settlement.
 
 Provider unavailability produces an unverified result, not a mismatch conclusion. If a terminal provider record contradicts local settlement, or a settled/failed transfer returns `404`, report an integrity incident; do not remove a credit, edit the ledger, or recreate the transfer. Only unresolved pending intents use `404 -> PUT` recovery. The command does not discover transfers missing from local records because the provider exposes no listing endpoint.
 
@@ -392,4 +392,4 @@ The candidate then emphasized implementation simplicity and familiarity with Cel
 
 The provider contract assumes permanent transfer-ID deduplication, durable lookup, and immutable definitive outcomes. A real provider that lacks those guarantees needs a revised recovery design before integration. For this exercise, the simulator implements them explicitly.
 
-The specification is ready for design review. Implementation begins after explicit candidate confirmation.
+The candidate subsequently authorized implementation. The delivered reference uses the modules above, separate wallet/provider databases, database ledger guards, bundled Swagger assets, and a single shared Compose image. Operator commands are `reconcile_known_transfers --once` and `reprocess_top_up <UUID>`; the latter preserves the original transfer identity. Verification includes real PostgreSQL concurrency, rollback, HTTP response loss, and a Celery worker connected to Redis. The repository README and committed OpenAPI schemas document the runnable implementation.
