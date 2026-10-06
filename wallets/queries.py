@@ -1,10 +1,6 @@
-from django.core import signing
-
 from common.errors import DomainError
 from common.serializers import MAX_INT
 from wallets.models import LedgerEntry
-
-CURSOR_SALT = "wallet-history-v1"
 
 
 def history(wallet, limit_text="50", cursor=None):
@@ -20,15 +16,18 @@ def history(wallet, limit_text="50", cursor=None):
     upper, before = wallet.last_sequence, wallet.last_sequence + 1
     if cursor:
         try:
-            data = signing.loads(cursor, salt=CURSOR_SALT)
-            if not isinstance(data, dict) or data.get("wallet") != str(wallet.id):
+            if not isinstance(cursor, str):
                 raise ValueError
-            upper, before = data["upper"], data["before"]
-            if type(upper) is not int or type(before) is not int:
+            wallet_id, upper_text, before_text = cursor.split(":")
+            if wallet_id != str(wallet.id):
                 raise ValueError
+            for value in (upper_text, before_text):
+                if not value.isascii() or not value.isdigit():
+                    raise ValueError
+            upper, before = int(upper_text), int(before_text)
             if not 0 <= upper <= min(MAX_INT, wallet.last_sequence) or not 1 <= before <= upper + 1:
                 raise ValueError
-        except (signing.BadSignature, ValueError, KeyError, TypeError):
+        except (ValueError, TypeError):
             raise DomainError("invalid_request", "Malformed cursor or wrong wallet.") from None
 
     rows = list(
@@ -41,8 +40,5 @@ def history(wallet, limit_text="50", cursor=None):
     next_cursor = None
     if len(rows) > limit:
         rows = rows[:limit]
-        next_cursor = signing.dumps(
-            {"wallet": str(wallet.id), "upper": upper, "before": rows[-1].wallet_sequence},
-            salt=CURSOR_SALT,
-        )
+        next_cursor = f"{wallet.id}:{upper}:{rows[-1].wallet_sequence}"
     return {"entries": rows, "next_cursor": next_cursor}

@@ -38,7 +38,7 @@ curl -X POST http://localhost:8000/v1/wallets/11111111-1111-4111-8111-1111111111
   -d '{"amount":"1000000","source_account_id":"demo-customer-1"}'
 ```
 
-Top-up creation returns **202** and a Location header. Follow that URL to observe PENDING, SETTLED, FAILED, or REVIEW_REQUIRED. Retrying creation returns the same receipt even after settlement. A pending top-up adds no spendable funds.
+Top-up creation returns **202** with the top-up ID in the receipt's `id` field. Use `GET /v1/wallets/{user_id}/top-ups/{id}` to observe PENDING, SETTLED, FAILED, or REVIEW_REQUIRED. Retrying creation returns the same receipt even after settlement. A pending top-up adds no spendable funds.
 
 After settlement:
 
@@ -68,12 +68,23 @@ A network timeout remains uncertain. The service reuses the same provider transf
 
 ```sh
 docker compose exec api python manage.py reconcile_known_transfers --once
+docker compose exec api python manage.py reconcile_known_transfers --mode transfers --since 2026-10-05T00:00:00Z
+docker compose exec api python manage.py reconcile_known_transfers --mode transfers --repair
+docker compose exec api python manage.py reconcile_known_transfers --mode ledger
 docker compose exec api python manage.py reprocess_top_up TOP_UP_UUID
 docker compose exec provider-api python manage.py provider_advance --once --force
 docker compose logs worker beat provider-processor
 ```
 
-Reconciliation checks known provider transfers and local ledger projections, reporting matched, pending, unverified, review-required, and mismatched records. Integrity mismatches cause a nonzero command exit. It does not change settled history or discover unknown external transfers.
+Reconciliation is read-only by default. It checks known provider transfers and local ledger projections, reporting matched, pending, unverified, review-required, and mismatched records. Workers handle provider creation and ordinary settlement; an external success with a local pending intent and no credit remains pending in the audit.
+
+The default `--mode all` checks every known transfer and the complete ledger. Use `--mode transfers` to skip the full ledger scan, or `--mode ledger` to check only ledger projections without provider calls. `--since` requires a timezone-aware ISO 8601 timestamp and selects top-ups by `updated_at`, always including PENDING and REVIEW_REQUIRED regardless of age. The cutoff affects transfer selection only: `--mode all --since ...` still checks the complete ledger. Use overlapping time windows for routine targeted audits and occasionally run a full historical audit.
+
+Local top-ups and credits are fetched in batches of 500 using short, read-only repeatable-read transactions. Provider GET requests run outside transactions and remain sequential. Each batch has a consistent snapshot; the whole audit is not a single snapshot. Reports include `mode`, `since`, `transfers_checked`, and `ledger_checked` to distinguish skipped checks from successful ones.
+
+`--repair` explicitly allows one correction: a PENDING top-up with an existing matching credit can become SETTLED after verified provider success and validation of the wallet's complete ledger. Repair locks the wallet before the top-up and rechecks current state. It changes only top-up status/diagnostics, never adds a credit, changes wallet funds, or sends a provider PUT. Conflicting provider confirmation, invalid credit, or inconsistent wallet accounting blocks repair and is reported as `repair_blocked` on the issue. FAILED and REVIEW_REQUIRED records are not repaired. `--since` and `--repair` cannot be used in ledger-only mode.
+
+Reports include `repair_enabled`, `repaired`, and `repaired_top_up_ids`; repaired records are a subset of `matched`. Unresolved integrity mismatches cause a nonzero command exit; successful repairs alone do not. Provider unavailability is unverified, not proof of an integrity mismatch. Reconciliation does not edit settled history or discover unknown external transfers. Apply the new indexes with `python manage.py migrate` before using the updated code (Compose's migrate service does this on startup).
 
 Reprocess only a reviewed intent after resolving its cause. It preserves the transfer ID and immutable parameters and returns the intent to polling. Failed transfers stay terminal; a new funding attempt needs a new client key.
 
@@ -100,7 +111,7 @@ docker compose up -d postgres redis
 .venv/bin/ruff format --check .
 ```
 
-Environment defaults target the Compose database at port 55432 and Redis at 56379; .env.example lists overrides. Settings read process environment variables. All wallet pods share SECRET_KEY to verify signed history cursors.
+Environment defaults target the Compose database at port 55432 and Redis at 56379; .env.example lists overrides. Settings read process environment variables. History cursors are unsigned tokens validated against the requested wallet and sequence boundaries.
 
 Regenerate committed schemas with:
 

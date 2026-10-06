@@ -6,7 +6,7 @@
 
  The supplied assignment requires credit, debit, current balance, and complete change history; no negative balance; a separate record for each change; a balance verifiable from recorded changes; atomic failure handling; and defined retry behavior.
 
-It additionally requires an append-only ledger, OpenAPI/Swagger documentation, concurrency safety across pods, and resilience during network partitions. Simplicity of implementation is the primary design criterion.
+ It additionally requires an append-only ledger, OpenAPI/Swagger documentation, concurrency safety across pods, and resilience during network partitions. Simplicity of implementation is the primary design criterion.©
 
 ### Confirmed scope and design assumptions
 
@@ -16,7 +16,7 @@ It additionally requires an append-only ledger, OpenAPI/Swagger documentation, c
 - Wallet creation is explicit. A demo caller supplies a user UUID; authentication, ownership verification, and real bank credentials are outside the exercise. Provider source accounts are preauthorized demo accounts.
 - Reconciliation covers provider transfers initiated and recorded by this service. Detecting unexpected transfers or proving the platform's total external balance requires a provider statement/listing API and is outside this two-endpoint contract.
 
-Provider-backed top-ups replace the earlier direct-credit endpoint. The original requirement to increase a wallet balance is satisfied by settling a top-up. A real provider could later implement the same adapter contract; no live banking integration is required for the exercise.
+The original requirement to increase a wallet balance is satisfied by settling a top-up. A real provider could later implement the same adapter contract; no live banking integration is required for the exercise.
 
 ## 2. Invariants and consistency model
 
@@ -124,7 +124,7 @@ erDiagram
 - `ledger_entry`: unique `(wallet_id, wallet_sequence)`, unique `(wallet_id, idempotency_key)`, and unique `top_up_id`. Null keys/references are allowed only as specified below.
 - A credit has positive `delta`, a non-null `top_up_id`, and null `idempotency_key`. A debit has negative `delta`, a non-null `idempotency_key`, and null `top_up_id`. Checks enforce these combinations and nonnegative `balance_after`.
 - A composite foreign key `(top_up_id, wallet_id)` references `top_up(id, wallet_id)`, backed by the corresponding unique constraint, so a credit cannot reference another wallet's funding intent. Foreign keys restrict deletion.
-- History uses an index on `(wallet_id, wallet_sequence DESC)`. A partial index on top-up IDs where `status = 'PENDING'` supports the periodic scan. There are no lease or per-record scheduling fields.
+- History uses an index on `(wallet_id, wallet_sequence DESC)`. A partial index on top-up IDs where `status = 'PENDING'` supports the periodic scan. Reconciliation additionally uses `(updated_at, id)` and a partial top-up ID index for `PENDING`/`REVIEW_REQUIRED`. There are no lease or per-record scheduling fields.
 
 Database integer types bound stored values. Ledger sequence increments are checked for overflow; exhaustion leaves the attempted operation unapplied and reports an integrity incident. PostgreSQL can compute ledger sums using a wider aggregate type.
 
@@ -156,7 +156,7 @@ An amount must be a JSON string matching `^[1-9][0-9]*$` and represent at most `
 | Method and path | Request | Success |
 | --- | --- | --- |
 | `PUT /v1/wallets/{user_id}` | No body | `200`, created or existing wallet without resetting it |
-| `POST /v1/wallets/{user_id}/top-ups` | UUID `Idempotency-Key`; `{"amount":"1000000","source_account_id":"demo-customer-1"}` | `202`, stable intent receipt and `Location` for status |
+| `POST /v1/wallets/{user_id}/top-ups` | UUID `Idempotency-Key`; `{"amount":"1000000","source_account_id":"demo-customer-1"}` | `202`, stable intent receipt containing the top-up ID |
 | `GET /v1/wallets/{user_id}/top-ups/{top_up_id}` | None | `200`, current local/provider state and ledger entry ID if settled |
 | `POST /v1/wallets/{user_id}/debits` | UUID `Idempotency-Key`; `{"amount":"250"}` | `201`, committed debit entry |
 | `GET /v1/wallets/{user_id}` | None | `200`, wallet ID, user ID, `currency:"IRR"`, balance, last sequence |
@@ -164,13 +164,13 @@ An amount must be a JSON string matching `^[1-9][0-9]*$` and represent at most `
 
 Source account IDs are nonempty opaque strings of at most 100 characters. The destination is configured by the service, never supplied by the public caller. A top-up response receipt contains immutable `id`, `wallet_id`, `amount`, and `currency`; its `202` means the intent was persisted, not that external funds have moved.
 
-A retried top-up creation returns the same `202` receipt and `Location`, even if the payment has since settled or failed. Clients use the status endpoint for progress. A failed top-up's key stays associated with that intent; trying a new transfer requires a new key. A retried successful debit returns its original `201` body, including its original `balance_after`. Reusing either operation's key with different parameters returns `409`. Keys are retained for the life of the corresponding record.
+A retried top-up creation returns the same `202` receipt, even if the payment has since settled or failed. Clients use `GET /v1/wallets/{user_id}/top-ups/{id}`, with `id` from the receipt, for progress. A failed top-up's key stays associated with that intent; trying a new transfer requires a new key. A retried successful debit returns its original `201` body, including its original `balance_after`. Reusing either operation's key with different parameters returns `409`. Keys are retained for the life of the corresponding record.
 
 Wallet `PUT` resolves concurrent creation through the unique user constraint and never resets an existing balance. Missing wallets are not created implicitly. A status request for a top-up belonging to a different wallet returns `404`.
 
 Ledger responses contain ID, wallet ID, kind, positive `amount`, signed `delta`, `balance_after`, `wallet_sequence`, timestamp, currency, and the top-up ID for a credit. A credit's external transfer can be traced through that top-up.
 
-History uses an opaque cursor with the wallet ID, next exclusive sequence boundary, and first page's upper sequence boundary. Limit is 1..100, default 50. Concurrent appends appear on a fresh traversal; following existing cursors yields the original history range in descending sequence order. Malformed or mismatched cursors return `400`.
+History uses an unsigned cursor in the format `wallet_id:upper_sequence:before_sequence`, containing the wallet ID, first page's upper sequence boundary, and next exclusive sequence boundary. Clients pass the returned token back to continue the traversal. Limit is 1..100, default 50. Concurrent appends appear on a fresh traversal; following existing cursors yields the original history range in descending sequence order. Malformed, out-of-range, or wallet-mismatched cursors return `400`.
 
 ### Provider API
 
@@ -293,21 +293,21 @@ sequenceDiagram
     participant W as Celery worker
     participant P as Provider
     C->>A: POST top-up with idempotency key
-    A->>D: Persist intent T; COMMIT
-    A-->>C: 202 with T and status URL
+    A->>D: Persist intent T#59; COMMIT
+    A-->>C: 202 receipt containing T
     B->>W: Schedule pending-intent dispatcher via Redis
     W->>D: Read pending intent IDs
     W->>W: Enqueue process_top_up(T) via Redis
-    W->>D: Load T; check pending state
+    W->>D: Load T#59; check pending state
     W->>P: GET transfer T
     P-->>W: 404
     W->>P: PUT transfer T with immutable parameters
     P-->>W: PENDING
-    W->>D: Keep T pending; update diagnostics
+    W->>D: Keep T pending#59; update diagnostics
     B->>W: Next polling cycle via Redis
     W->>P: GET transfer T
     P-->>W: SUCCEEDED with matching parameters
-    W->>D: Lock wallet then T; append credit; update balance; settle T; COMMIT
+    W->>D: Lock wallet then T#59; append credit#59; update balance#59; settle T#59; COMMIT
     C->>A: GET top-up T
     A-->>C: SETTLED with ledger entry ID
 ```
@@ -324,7 +324,11 @@ Deadlocks (`40P01`) and serialization conflicts (`40001`) trigger a bounded retr
 
 Normal polling reconciles unfinished intents: external success becomes one local credit, definitive external failure becomes local failure, and uncertainty remains pending.
 
-A `reconcile_known_transfers --once` command also checks recorded transfers, including settled and failed ones. It retrieves provider state outside database transactions and reports counts of matched, pending, unverified, review-required, and mismatched records. For eligible pending intents it invokes the same processing and settlement service used by the Celery task. A pending intent with an existing credit is reported as inconsistent without attempting another settlement.
+A `reconcile_known_transfers --once` command checks recorded transfers, including settled and failed ones, without processing or settling ordinary pending intents. It is read-only by default, retrieves provider state outside database transactions, and reports counts of matched, pending, unverified, review-required, and mismatched records. Provider success with a local pending intent and no credit remains pending for worker recovery. A pending intent with an existing credit is reported as inconsistent unless an explicit, verified repair succeeds.
+
+`--mode all` (the default) checks transfers and the complete ledger; `--mode transfers` skips the ledger scan; `--mode ledger` performs only the complete ledger/projection check, without provider calls. An optional timezone-aware ISO 8601 `--since` selects top-ups whose `updated_at` is at or after the cutoff, plus unresolved `PENDING` and `REVIEW_REQUIRED` intents of any age. It never limits ledger history. Reject `--since` or `--repair` with ledger-only mode. Routine targeted audits should use overlapping time windows and be supplemented with full historical audits. Scheduling and persistent audit checkpoints are outside this delivery.
+
+Fetch top-ups and their credits in batches of 500, using two queries per short read-only repeatable-read transaction and pagination by top-up ID. Finish the transaction before sequential provider GET requests. Each batch is consistent, but the entire audit is not one global snapshot. Reports include the selected `mode`, `since`, `transfers_checked`, `ledger_checked`, and `repair_enabled`, making skipped checks explicit.
 
 The command verifies:
 
@@ -336,6 +340,10 @@ The command verifies:
 Local projection/ledger comparisons use one consistent read snapshot (a single query or a short read-only repeatable-read transaction). Provider calls occur outside that snapshot. The audit reads local intent and credit state before querying the provider: immutable terminal provider outcomes ensure a concurrent settlement cannot pair newer local settlement with an older pending observation. Confirmation after a pending local snapshot is ordinary progress; a later audit can verify the settlement.
 
 Provider unavailability produces an unverified result, not a mismatch conclusion. If a terminal provider record contradicts local settlement, or a settled/failed transfer returns `404`, report an integrity incident; do not remove a credit, edit the ledger, or recreate the transfer. Only unresolved pending intents use `404 -> PUT` recovery. The command does not discover transfers missing from local records because the provider exposes no listing endpoint.
+
+With explicit `--repair`, an eligible pending intent with an existing credit may have its local settlement status repaired. Require provider `SUCCEEDED` with matching ID and all immutable parameters, local provider confirmation that is null/PENDING/SUCCEEDED, and exactly one matching credit for the same wallet and amount. Outside the batch snapshot, use the existing bounded transaction-retry helper to lock the wallet first and then the top-up, reread state, and check the wallet's complete ledger: balance, last sequence, sequence continuity, and every running balance. Scope both ledger aggregates and the wallet lookup to that wallet. All provider I/O remains outside the write transaction.
+
+On success set `status=SETTLED`, `provider_status=SUCCEEDED`, clear `error_code`, and update `last_checked_at` and `updated_at`. Never insert or modify ledger entries, change wallet balance/sequence, or send a provider PUT. Concurrently completed settlement is validated and counted as matched without counting a repair. FAILED and REVIEW_REQUIRED intents are excluded. Refused repairs retain their inconsistency issue and include a `repair_blocked` reason. Reports include a `repaired` count and `repaired_top_up_ids`, with repairs counted as a subset of matched records. Unresolved integrity issues cause a nonzero command exit; successful repairs alone do not.
 
 | Failure | Required recovery |
 | --- | --- |
@@ -375,7 +383,7 @@ Required tests:
 7. Crash after external success and before local commit; redispatch the pending intent and verify eventual single credit.
 8. Deliver duplicate tasks to worker replicas and apply a stale pending observation after settlement; verify monotonic local state, provider deduplication, and exactly one credit.
 9. Verify successful-transfer mismatch and settlement overflow enter review without misreporting failed funds or modifying history.
-10. Reconcile known transfers with matched, pending, unreachable, and inconsistent outcomes; verify reports and repeatable settlement. Concurrent settlement must not cause false mismatches; missing terminal provider records must never be recreated.
+10. Reconcile known transfers with matched, pending, unreachable, and inconsistent outcomes; verify read-only audits, batched query counts, mode/cutoff selection, report metadata, and command exit behavior. Explicit repair of a verified pending credit must be idempotent, preserve ledger/funds, and refuse invalid accounting or contradictory confirmations. Concurrent settlement, simultaneous repairs, and spending must not cause false mismatches or duplicate credits; missing terminal provider records must never be recreated.
 11. Verify decimal-string amounts above `2^53 - 1`, numeric JSON rejection, BIGINT limits, resource/cursor validation, and IRR responses.
 12. Confirm database ledger guards reject update/delete and reconstruct wallet balance/sequence from entries.
 13. Validate both OpenAPI documents and representative requests/responses.

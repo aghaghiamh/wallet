@@ -69,7 +69,13 @@ class TopUp(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["id"], condition=Q(status="PENDING"), name="topup_pending_idx")
+            models.Index(fields=["id"], condition=Q(status="PENDING"), name="topup_pending_idx"),
+            models.Index(fields=["updated_at", "id"], name="topup_updated_idx"),
+            models.Index(
+                fields=["id"],
+                condition=Q(status__in=["PENDING", "REVIEW_REQUIRED"]),
+                name="topup_unresolved_idx",
+            ),
         ]
 
 

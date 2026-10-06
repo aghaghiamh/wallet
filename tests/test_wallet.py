@@ -40,6 +40,7 @@ def test_funding_and_spending_with_retry(client, wallet, service_provider):
         base(wallet) + "/top-ups", request, format="json", HTTP_IDEMPOTENCY_KEY=key
     )
     assert response.status_code == 202
+    assert "Location" not in response.headers
     receipt = dict(response.data)
     top_up = TopUp.objects.get(pk=receipt["id"])
     assert LedgerEntry.objects.count() == 0
@@ -49,7 +50,7 @@ def test_funding_and_spending_with_retry(client, wallet, service_provider):
 
     advance_transfer(top_up.id, force=True)
     assert process_top_up(top_up.id, service_provider) == "SETTLED"
-    status = client.get(response["Location"])
+    status = client.get(f"{base(wallet)}/top-ups/{receipt['id']}")
     assert status.data["status"] == "SETTLED"
     assert status.data["ledger_entry_id"]
 
@@ -57,6 +58,7 @@ def test_funding_and_spending_with_retry(client, wallet, service_provider):
         base(wallet) + "/top-ups", request, format="json", HTTP_IDEMPOTENCY_KEY=key
     )
     assert repeated.status_code == 202 and repeated.data == receipt
+    assert "Location" not in repeated.headers
 
     debit_key = str(uuid4())
     first = client.post(
@@ -268,6 +270,7 @@ def test_history_cursor_is_stable_during_append(wallet, fund):
         ("0", None, wallet),
         ("101", None, wallet),
         ("1", "broken", wallet),
+        ("1", f"{wallet.id}:3:100", wallet),
         ("1", first["next_cursor"], other),
     ]:
         with pytest.raises(DomainError):

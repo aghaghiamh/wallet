@@ -60,10 +60,7 @@ class TopUpView(APIView):
         top_up = services.create_top_up(
             uuid_value(user_id), idempotency_key(request), **data.validated_data
         )
-        location = f"/v1/wallets/{top_up.wallet.user_id}/top-ups/{top_up.id}"
-        return Response(
-            TopUpReceiptSerializer(top_up).data, status=202, headers={"Location": location}
-        )
+        return Response(TopUpReceiptSerializer(top_up).data, status=202)
 
 
 class TopUpStatusView(APIView):

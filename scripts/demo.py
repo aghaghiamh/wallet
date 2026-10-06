@@ -28,13 +28,13 @@ def main():
     print(f"Wallet: {wallet['id']} (user {user_id})")
     key = str(uuid4())
     body = {"amount": "1000000", "source_account_id": "demo-customer-1"}
-    status, receipt, headers = call("POST", path + "/top-ups", body, key)
+    status, receipt, _ = call("POST", path + "/top-ups", body, key)
     assert status == 202
-    location = headers["Location"]
+    status_path = f"{path}/top-ups/{receipt['id']}"
     print(f"Funding intent: {receipt['id']}; waiting for provider confirmation...")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        _, payment, _ = call("GET", location)
+        _, payment, _ = call("GET", status_path)
         if payment["status"] != "PENDING":
             break
         time.sleep(1)

@@ -117,6 +117,9 @@ def test_reconciliation_reports_known_transfers(wallet, service_provider, monkey
     assert report["pending"] == 1
     advance_transfer(top_up.id, force=True)
     report = reconcile_known_transfers(service_provider)
+    assert report["pending"] == 1 and LedgerEntry.objects.count() == 0
+    process_top_up(top_up.id, service_provider)
+    report = reconcile_known_transfers(service_provider)
     assert report["matched"] == 1 and report["projection_mismatches"] == []
     provider = Mock()
     provider.get.side_effect = ProviderUnavailable
@@ -186,5 +189,6 @@ def test_reconciliation_tolerates_settlement_during_provider_check(wallet):
 
     client.get.side_effect = racing_get
     report = reconcile_known_transfers(client)
-    assert report["matched"] == 1 and report["mismatched"] == 0
+    assert calls == 1
+    assert report["pending"] == 1 and report["mismatched"] == 0
     assert report["projection_mismatches"] == []

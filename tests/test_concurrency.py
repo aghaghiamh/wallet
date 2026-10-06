@@ -10,7 +10,7 @@ from provider.models import Account, Transfer
 from provider.services import advance_transfer, create_transfer, seed_accounts
 from tests.conftest import observation
 from wallets.models import LedgerEntry, TopUp
-from wallets.reconciliation import projection_mismatches
+from wallets.reconciliation import projection_mismatches, repair_pending_credit
 from wallets.services import create_top_up, debit
 from wallets.topups import apply_observation
 
@@ -85,6 +85,37 @@ def test_debit_races_with_credit(wallet):
     wallet.refresh_from_db()
     assert wallet.balance in {20, 100}
     assert projection_mismatches() == []
+
+
+def test_simultaneous_repairs_change_status_once(wallet):
+    from tests.test_reconciliation import pending_credit
+
+    top_up = pending_credit(wallet)
+    results = race(
+        lambda: repair_pending_credit(top_up.id, observation(top_up)),
+        lambda: repair_pending_credit(top_up.id, observation(top_up)),
+    )
+    assert all(result[0] == "matched" for result in results)
+    assert sum(result[2] for result in results) == 1
+    top_up.refresh_from_db()
+    wallet.refresh_from_db()
+    assert top_up.status == "SETTLED" and top_up.provider_status == "SUCCEEDED"
+    assert wallet.balance == 100 and wallet.last_sequence == 1
+    assert LedgerEntry.objects.count() == 1 and projection_mismatches() == []
+
+
+def test_repair_races_with_spending_without_changing_funds(wallet):
+    from tests.test_reconciliation import pending_credit
+
+    top_up = pending_credit(wallet)
+    results = race(
+        lambda: repair_pending_credit(top_up.id, observation(top_up)),
+        lambda: debit(wallet.user_id, uuid4(), 80),
+    )
+    assert results[0] == ("matched", None, True, None)
+    wallet.refresh_from_db()
+    assert wallet.balance == 20 and wallet.last_sequence == 2
+    assert LedgerEntry.objects.count() == 2 and projection_mismatches() == []
 
 
 def test_provider_deduplicates_concurrent_creation_and_execution():

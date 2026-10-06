@@ -637,20 +637,26 @@ components:
         id:
           type: string
           format: uuid
-        user_id:
-          type: string
-          format: uuid
+          readOnly: true
         currency:
           type: string
+          readOnly: true
         balance:
           type: string
           pattern: ^-?(0|[1-9][0-9]*)$
+          readOnly: true
         last_sequence:
           type: string
           pattern: ^-?(0|[1-9][0-9]*)$
+          readOnly: true
+        user_id:
+          type: string
+          format: uuid
+          readOnly: true
         created_at:
           type: string
           format: date-time
+          readOnly: true
       required:
       - balance
       - created_at

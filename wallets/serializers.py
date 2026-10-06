@@ -2,7 +2,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from common.serializers import AccountField, AmountField, IntegerStringField, StrictSerializer
-from wallets.models import LedgerEntry, TopUp
+from wallets.models import LedgerEntry, TopUp, Wallet
 
 
 class DebitRequestSerializer(StrictSerializer):
@@ -13,13 +13,15 @@ class TopUpRequestSerializer(DebitRequestSerializer):
     source_account_id = AccountField()
 
 
-class WalletSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
-    user_id = serializers.UUIDField()
-    currency = serializers.CharField()
-    balance = IntegerStringField()
-    last_sequence = IntegerStringField()
-    created_at = serializers.DateTimeField()
+class WalletSerializer(serializers.ModelSerializer):
+    currency = serializers.CharField(read_only=True)
+    balance = IntegerStringField(read_only=True)
+    last_sequence = IntegerStringField(read_only=True)
+
+    class Meta:
+        model = Wallet
+        fields = "__all__"
+        read_only_fields = ("user_id",)
 
 
 class LedgerSerializer(serializers.Serializer):
